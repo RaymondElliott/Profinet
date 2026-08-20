@@ -1,8 +1,9 @@
-# Office temp files
+# Temp/backup files
 ~$*
 *.tmp
-# IDE
-.zcode/
-# OS
 Thumbs.db
-Desktop.ini
+
+# ZCode internal
+.zcode/
+
+# Repo index
