@@ -1,0 +1,50 @@
+@startuml pn_boot_C_mainappl_pnstack
+title 详细图C：MainAppl → PN协议栈启动（函数级）
+
+skinparam defaultFontName "Microsoft YaHei"
+
+participant "DK401" as dk401
+participant "PnUsr_Api" as usr
+participant "iodapi_event" as iod
+participant "PNPB\n(pnpb_api)" as pnpb
+participant "TSKMA" as tskma
+participant "t_APP / Pnio_Pnpb" as tapp
+
+dk401 -> usr : MainAppl()\n(usriod_main.c:604)
+usr -> usr : 填 PnUsrDev\nVendorId/DeviceId\n(usriod_main.c:634-637)
+dk401 -> usr : PnUsr_DeviceSetup(\n&PnUsrDev, IoSubList,\ngCountOfModule+4, Im0List)\n(usriod_main.c:644-648,\nPnUsr_Api.c:688)
+
+usr -> usr : OsAllocSemB(&TransEndSemId)\n(PnUsr_Api.c:719)
+usr -> usr : 创建 Pnio_CycleIO 任务\nprio=2\n(PnUsr_Api.c:727-731)
+usr -> usr : StartupPrioDevice()\n(PnUsr_Api.c:742, 实现:425-672)
+usr -> iod : PnUsr_cbf_iodapi_event_init(\nIoSubList, N)\n(PnUsr_Api.c:448,\niodapi_event.c:148-175)
+note right of iod : 关键变量初始化:\n清 InData/OutData/IOPS/IOCS\n按 IoSubList 写入\nInDatLen/OutDatLen\n(iodapi_event.c:169-171)
+usr -> usr : Bsp_nv_data_restore x5\n(PnUsr_Api.c:457-472)
+
+usr -> pnpb : PNIO_setup(设备名/IP)\n(PnUsr_Api.c:589,\npnpb_api.c:159-200)
+usr -> pnpb : PNIO_pdev_setup(IoSubList)\n(PnUsr_Api.c:599)
+usr -> pnpb : PNIO_device_open()\n(PnUsr_Api.c:604,\npnpb_api.c:263-300)
+
+pnpb -> tskma : tskma_init()+tskma_open()\n(pnpb_api.c:292,\ntskma.c:41-148)
+tskma -> tskma : 创建 t_IDL (prio 8)\n再由 t_IDL 创建其余8任务\n(tskma_task_idl.c:51-121)
+note right of tskma : 9任务: t_APP/t_EDD/t_ORG/\nt_PNO/t_TCP/t_POF/t_REM/\nt_STP(均prio=3)\nt_IDL(prio=8)
+tskma -> tskma : STP冷启动状态机\nAPP_INIT→SETUP→OPEN_01→\nTCP_OPEN→OPEN_02→START→\nCYCLIC_EA→DONE\n(tskma_task_stp.c:56-175)
+tskma -> tapp : TSKMA_OPC_APP_OPEN_02\n(tskma_task_app.c:76-107)
+tapp -> tapp : pndv_open() (:96)\npnpb_init() (:98)\npnpb_open() (:104)
+note right of tapp : pnpb_init 创建\nPnio_PnpbPost (prio 3)\nPnio_Pnpb (prio 3)\n(pnpb.c:75-104)
+tapp --> pnpb : PNDV_START_DONE\n→ Pnpb.State=PNPB_PNDV_STARTED\n(pnpb_peri.c:571-592)
+
+pnpb -> pnpb : while(state!=PNPB_PNDV_STARTED)\nOsWait_ms(10)\n(pnpb_api.c:297-300)
+note right of pnpb #pink : 坑点: DK401在此忙等\nTSKMA冷启动完成,\n这是启动同步点
+pnpb --> usr : DevHndl
+
+usr -> pnpb : PlugSubmodules()\n— PNIO_sub_plug_list()\n(PnUsr_Api.c:824,\npnpb_api.c:392)
+note right of pnpb : 持锁 OS_MUTEX_PNFB_PLUG\n+ OS_MUTEX_PNFB\n(pnpb_api.c:406-420)
+usr -> pnpb : PNIO_set_dev_state(OPERATE)\n(PnUsr_Api.c:631)
+usr -> pnpb : PNIO_netcom_enable()\n(PnUsr_Api.c:639)
+usr -> pnpb : PNIO_CP_register_cbf(\nTRANS_END, trigger_io_exchange)\n(PnUsr_Api.c:762-763)
+note right of pnpb : 周期IO触发链:\nTransEnd中断(DSR)\n→ OsGiveSemB(TransEndSemId)\n→ Task_CycleIO\n→ PnUsr_cbf_DatXch\n(usriod_main.c:1375)
+
+pnpb --> dk401 : 启动完成
+
+@enduml

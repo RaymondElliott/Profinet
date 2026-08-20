@@ -1,0 +1,64 @@
+@startuml pn_boot_D_ar_callback
+title 详细图D：PLC连接后 AR 建立回调链（函数级）
+
+skinparam defaultFontName "Microsoft YaHei"
+
+participant "PLC控制器" as plc
+participant "PNDV" as pndv
+participant "Pnio_Pnpb任务" as pnpb
+participant "Pnio_PnpbPost任务" as post
+participant "iodapi_event\n(应用回调)" as iod
+participant "Exmode\n(xinjie_pn_exmode)" as exmode
+
+plc -> pndv : Connect Request
+pndv -> pnpb : PNDV_EV_TO_PERI_CONNECT_IND
+pnpb -> iod : PNIO_cbf_ar_connect_ind\n(pnpb_peri.c:768,\niodapi_event.c:523-550)
+note right of iod : g_Isdiscon = 0 (:540)\n清字节序记录 (:549)
+
+plc -> pndv : Ownership (期望组态)
+pndv -> pnpb : OWN_IND_MORE_FOLLOWS\n逐个 pnpb_sub_exp_add\n(pnpb_peri.c:795-826)
+pndv -> pnpb : OWN_IND (最后一个)
+pnpb -> post : OsSendMessage 转发\n(pnpb_peri.c:847-873)
+post -> post : pnpb_perform_ownership_ind\n(pnpb_peri.c:302-401)
+post -> post : 取锁 OS_MUTEX_PNPB\n+ OS_MUTEX_PNPB_IO\n(pnpb_sub_exp.c:208-209)
+post -> iod : PNIO_cbf_ar_ownship_ind\n(pnpb_sub_exp.c:359-361,\niodapi_event.c:569-671)
+note right of iod #pink : 坑点: 此回调在持双锁\n状态下执行, E2COM24\n动态子槽pull/plug在此\n发生【见文档3】
+post -> post : 释放双锁\n(pnpb_sub_exp.c:378-379)
+
+plc -> pndv : PrmWrite (参数记录)
+pndv -> pnpb : 记录写事件
+pnpb -> exmode : PNIO_cbf_rec_write\n→ PnUsr_cbf_rec_write\n(PnUsr_Api.c:1046,\niodapi_event.c:1193)
+
+alt Index 0/1 过程数据字节序
+  exmode -> exmode : 存字节序记录\n(:1243-1253)
+else Index 3 模块信息字节序
+  exmode -> exmode : 存 Info_Endian\n(:1295-1301)
+else Index 4 模块信息(8字节)
+  exmode -> exmode : 存 XPN_Module_Info_Record\n(:1287-1293)
+  note right of exmode #pink : 坑点: 配置阶段读值\n会覆盖 XpnObj.ModInfo\n的长度字段
+else Index 5 模块配置
+  exmode -> exmode : 存 Config_Record + cfglen\n(:1265-1272)
+  exmode -> exmode : Xpn_Exmode_DownloadConf(slot-1)\n(:1275, exmode.c:1474)
+  note right of exmode : configFlag=0 待下发\nConfiged_ModuleCount=0
+end
+
+plc -> pndv : PrmEnd (参数结束)
+pndv -> pnpb : PRM_END_IND
+pnpb -> iod : PNIO_cbf_param_end_ind\n(pnpb_peri.c:949,\niodapi_event.c:606-717)
+iod -> exmode : Xpn_Exmode_ConfigComplte()\n(pnpb_peri.c:1009,\nexmode.c:279-290)
+note right of exmode : XCom_Master_Subpackage_Init\n清RecvData, cfgendflag=1
+
+plc -> pndv : READY_FOR_INPUT_UPDATE
+pndv -> iod : PNIO_cbf_ready_for_input_update_ind\n(pnpb_peri.c:938,\niodapi_event.c:738-778)
+note right of iod : 首次 initiate_data_read/write\n(:748/:757)\nPnUsr_ActivateIoDatXch (:764)\n激活 Pnio_CycleIO 周期交换
+
+plc -> pndv : SM_IN_DATA / AR_IN_DATA
+pndv -> iod : PNIO_cbf_ar_indata_ind\n(pnpb_peri.c:1052,\niodapi_event.c:797-804)
+note over plc, exmode : AR进入数据交换, DK401主循环随后下发模块配置并开始HSBUS周期读写
+
+plc -> pndv : (断开) Release/超时
+pndv -> iod : AR_DISCONNECT_IND
+iod -> iod : PNIO_cbf_ar_disconn_ind\n(pnpb_peri.c:251-293,\niodapi_event.c:824-839)
+note right of iod : g_Isdiscon = 1 (:836)\n周期读写入口据此跳出
+
+@enduml

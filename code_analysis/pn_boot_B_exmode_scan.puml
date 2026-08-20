@@ -1,0 +1,51 @@
+@startuml pn_boot_B_exmode_scan
+title 详细图B：Xpn_Exmode_Init 右扩扫描（函数级）
+
+skinparam defaultFontName "Microsoft YaHei"
+
+participant "DK401" as dk401
+participant "Xpn_Exmode_Init\n(xinjie_pn_exmode.c)" as exmode
+participant "HSBUS库" as hsbus
+participant "GbusEx分包库" as gbus
+participant "usriod_main\n(IoSubList)" as usr
+
+dk401 -> exmode : Xpn_Exmode_Init()\n(xinjie_pn_exmode.c:1995)
+exmode -> exmode : gModConfFlag[].configFlag=3\n上电初始态\n(:2023-2027)
+exmode -> hsbus : HSBusAbstractAPIRegister\nspi_open/write/read,\nsem, usleep100us\n(:2029-2039)
+exmode -> hsbus : OshwRegister(FPGA接口)\n(:2047-2055)
+exmode -> exmode : OsWait_ms(2000)
+
+loop 最多3次 (:2068-2085)
+  exmode -> exmode : OsWait_ms(1500)
+  exmode -> hsbus : HSBusInit()
+  hsbus --> exmode : 结果
+  alt 失败
+    exmode -> hsbus : HSBusUninit()
+  end
+end
+
+exmode -> hsbus : HSBusGetBuildTime()\n(:2086)
+note right of hsbus : 失败时缓存\nHBusSendBuf/HBusRecvBuf\n报文日志 (:2090-2110)
+exmode -> hsbus : HSBusGetInfo(&gHSBusInfo)\n(:2113)
+hsbus --> exmode : Count + Modules[]\n(MODULE_INFO指针数组)
+
+exmode -> gbus : XCom_Master_Set_Gbus_Send_Err_Callback(\nXpn_Com_SendOver)\n(:2134)
+exmode -> exmode : Xpn_Exmode_GetDesc(&gHSBusInfo)\n(:2149, 实现:469-671)
+
+loop 每个物理模块 i
+  exmode -> exmode : 通用长度计算\nInDatLen=ceil(ReadBits/8)+ReadBytes\nOutDatLen=ceil(WriteBits/8)+WriteBytes\n(:480-481)
+  alt 特殊模块 (switch ModuleIdent)
+    exmode -> exmode : 8X8Y=1/1, 16X=2/0,\nE4AD=22/0, E4DA=16/6\nE2COM24=0/0, EP24=0/0\n(:505-564)
+    note right of exmode #pink : 坑点: E2COM24主槽\n注册为0/0, 业务长度\n由动态子槽承载
+  end
+  exmode -> usr : xinjie_pn_update_iosublist(i, io_list)\n(:640, usriod_main.c:1440-1444)
+  note right of usr : 写 IoSubList[4+i]\ngCountOfModule++
+  exmode -> usr : xinjie_pn_update_im0_list\n(:641, usriod_main.c:1453-1456)
+  exmode -> exmode : XpnObj.ModInfo[i] =\n物理MODULE_INFO字段\n(:631-646)
+end
+
+exmode --> dk401 : 返回
+
+note over dk401, usr : 此时 IoSubList 已按实际接入右扩模块填充，\nPN 协议栈启动(MainAppl)后一次性提交。\n这是"扫描必须先于PN栈启动"的原因。
+
+@enduml

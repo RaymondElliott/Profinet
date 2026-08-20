@@ -1,0 +1,58 @@
+@startuml e2com24_C_send_subpackage
+title 详细图C：写周期 E2COM24 分包发送（函数级）
+
+skinparam defaultFontName "Microsoft YaHei"
+
+participant "OutData\n(各子槽)" as out
+participant "HSbus_Process\n写分支(:760)" as proc
+participant "serial_send_\nmerge_data[1440]" as merge
+participant "GbusEx分包库" as gbusex
+participant "HSBUS库" as hsbus
+participant "E2COM24模块" as com
+
+proc -> proc : 遍历到E2COM24槽\n(:777-780)
+
+alt GbusEx_MID > 7
+  proc -> proc : 报XPN_ERR_HSBUS_MODULE_NUM\ngoto RETURN (:784-791)
+  note right of proc #pink : 坑点: 最多支持\n8个串口模块
+end
+
+proc -> proc : GbusEx_COM_No=0 (:794)\nSendUpdateFlag=1 (:797)
+
+loop 每个子槽 index (:806起)
+  alt flag==0或outlen==0
+    proc -> proc : continue (:806-807)
+  else 有效命令子槽
+    proc -> proc : Xpn_Convert_Endian_Big_to_Little\n(OutData[index][0]) (:810)
+    proc -> merge : memcpy(merge+offset,\nOutData[index], outlen)\noffset+=outlen (:812)
+    note right of merge : 1440字节上限保护\n(:814-817)
+  end
+end
+
+alt totalOutLength == 0
+  proc -> proc : UpdateFlag=0 (:821-822)
+else
+  proc -> proc : 填MasterSendPara:\nModule_ID/COM_ID/DataType=1\nComData=merge\nComDataLen=totalOutLength\nGbusData=GbusEx_Send_GbusData\n(:824-831)
+  proc -> proc : g_subpackage_stuck_flag=0\n(:833)
+  proc -> gbusex : XCom_Master_SendFrame(\n&MasterSendPara) (:837)
+  gbusex -> gbusex : 分包计算:\nPacketAllNum=len/86(+1)\nPacketLastLen\n(SubpackageAndPackage.c:652-661)
+  gbusex -> gbusex : COM0/COM1发送权仲裁\nLastOwnSendFlag交替\n(:676-723)
+  gbusex -> gbusex : 序号++/装填本包数据\n100字节帧: COM号|序号|状态|\n空闲标志|分包总数|分包序号|\n类型|Err|长度|数据\n(:726-746, 帧偏移90-99)
+  gbusex -> gbusex : 卡死判断 (2000周期)\n(:748-761)
+  gbusex --> proc : GbusEx_Send_GbusData\n+ GbusDataLen (:765-767)
+
+  alt SEND_BUSY?
+    proc -> proc : 仅Xpn_ErrCode记录\n不中断周期 (:838-843)
+  else 其他错误
+    proc -> proc : Xpn_ErrCode上报 (:844-849)\nSTUCK恢复块#if 0关闭\n(:851-865)
+  end
+
+  proc -> proc : mpinfo.BytesData=\nGbusEx_Send_GbusData\n(=E8WByteBuf) (:869-872)\nGbusEx_MID++ (:873)
+  proc -> hsbus : ModuleParseWrite(i,\ngModuleData[j], mpinfo) (:918)
+  proc -> proc : 清GbusEx_Send_GbusData\n(:925)
+  proc -> hsbus : HSBusWrite(全模块整帧)\n(:937)
+  hsbus -> com : GBUS周期帧\n(含本次分包)
+  note over gbusex, hsbus : 一帧业务数据需要\nceil(totalOutLength/86)个\n写周期才能发完
+end
+
+@enduml

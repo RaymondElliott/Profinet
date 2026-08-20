@@ -1,0 +1,52 @@
+@startuml e2com24_B_config_download
+title 详细图B：串口配置下发（函数级）
+
+skinparam defaultFontName "Microsoft YaHei"
+
+participant "PLC控制器" as plc
+participant "iodapi_event" as iod
+participant "DK401\n(Exmode_Task)" as dk401
+participant "ModConf_ToModule\nE2COM24分支" as conf
+participant "build_Serialport_Cfgframe\n(exmode.c:1380)" as build
+participant "HSBUS库" as hsbus
+participant "E2COM24模块" as com
+participant "GbusEx分包库" as gbusex
+
+group Index5记录接收
+  plc -> iod : PrmWrite Index5\n(逐子槽下发)
+  iod -> iod : 存XPN_Module_Config_Record\ncfglen=BufLen\n(iodapi_event.c:1265-1272)
+  iod -> dk401 : Xpn_Exmode_DownloadConf\n(:1275)
+end
+
+group PrmEnd后版本检查
+  plc -> iod : PrmEnd
+  note over iod, dk401 : cfgendflag=1后\nXpn_Check_ECOM24_ModVer\n(exmode.c:2283, 实现:1557-1588)\n校验串口模块固件版本兼容
+end
+
+group 配置帧构建与下发
+  dk401 -> conf : Xpn_Exmode_ModConf_ToModule\nE2COM24分支 (:1657)
+  conf -> conf : totalInLength=0\ntotalOutLength=0\n(:1661-1662)
+  conf -> conf : 遍历子槽转字节序\n统计slotsCount\n(:1665-1673)
+  conf -> build : Xpn_Exmode_build_Serialport_Cfgframe(\ng_PnModConf, i, slotsCount,\n&ConfigureLength) (:1677)
+  build -> build : 报文头 (:1392-1395)
+  build -> build : COM0/COM1串口参数区\n128字节 (:1397-1405)
+  build -> build : 动态inlen重算:\n线圈型0x00652002-0f: 位数+8\n(:1411-1424)\n字型0x00652010-1d: 字数×2\n(:1426-1432)
+  note right of build #lightgreen : 关键: Modbus读命令的\n实际inlen由Index5配置\n的对象数量决定,\n不直接用GSDML档位
+  build -> build : 每子槽指令条目: 类型/子槽号/\n指令模式/OutputLen/InputLen/\ncfglen/配置内容 (:1434-1461)
+  build --> conf : 配置帧完成
+  conf -> conf : 再遍历累加\ntotalInLength += inlen\ntotalOutLength += outlen\n跳过子槽0 (:1679-1688)
+  note right of conf #pink : 坑点: total不含子槽0\n的6字节诊断, 不等于\n该模块PN总长度
+  conf -> conf : sem_wait(g_spi_update)\nHSBusModuleConfigure(i,\ng_PnModConf, ConfigureLength,\ncfg_64) (:1775-1789)
+  conf -> hsbus : 串口配置帧
+  hsbus -> com
+  com --> hsbus : 结果
+  conf -> conf : 成功configFlag=1 (:1960)\n清E2COM24的OutData/InData\n实时区 (:1966-1973)
+  conf --> dk401 : 返回
+end
+
+group 分包库初始化（PrmEnd事件内）
+  note over gbusex : Xpn_Exmode_ConfigComplte\n(pnpb_peri.c:1009→exmode.c:279-290)\n→ XCom_Master_Subpackage_Init (:283)\n全结构清零, GbusSendBuf[0]预置COM号\n(SubpackageAndPackage.c:237-250)
+  note over gbusex : XCom_Set_Module_ConfigVersion\n(SubpackageAndPackage.c:218)\n当前仓库无调用点 (预留接口)
+end
+
+@enduml

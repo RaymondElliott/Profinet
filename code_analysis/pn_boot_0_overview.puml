@@ -1,0 +1,48 @@
+@startuml pn_boot_0_overview
+title PROFINET 上电整体流程（模块级概览）
+
+skinparam defaultFontName "Microsoft YaHei"
+
+participant "eCos内核" as ecos
+participant "DK401主任务\n(prio 7)" as dk401
+participant "HSBUS库\n(libhsbus.a)" as hsbus
+participant "右扩模块\n(物理从站)" as ext
+participant "PN协议栈\n(TSKMA 9任务)" as pn
+participant "PLC控制器" as plc
+
+ecos -> dk401 : cyg_user_start 创建并启动\n(main_ecos.c:58-63)
+
+dk401 -> dk401 : PNIO_init()\nOS/NV/内存初始化\n(main_ecos.c:80)
+dk401 -> dk401 : 解密/激活校验\n(main_ecos.c:85-176)
+
+group xpn_init_first (main_ecos.c:181)
+  dk401 -> dk401 : 驱动初始化\nGPIO/SPI/定时器/FLASH
+  dk401 -> hsbus : HSBusInit() 扫描右扩\n(最多重试3次)
+  hsbus -> ext : LVDS/SPI 总线枚举
+  ext --> hsbus : 模块自报信息
+  dk401 -> hsbus : HSBusGetInfo(&gHSBusInfo)
+  hsbus --> dk401 : 模块数量+MODULE_INFO
+  dk401 -> dk401 : Xpn_Exmode_GetDesc()\n生成IoSubList
+end
+
+group MainAppl (main_ecos.c:183) PN栈启动
+  dk401 -> pn : PnUsr_DeviceSetup(IoSubList)
+  pn -> pn : 创建TSKMA 9任务\nSTP冷启动状态机
+  dk401 -> dk401 : 忙等 PNPB_PNDV_STARTED\n(pnpb_api.c:297-300)
+  pn --> dk401 : 冷启动完成
+end
+
+dk401 -> dk401 : xpn_init_second() 创建服务任务\n(main_ecos.c:210)
+
+group AR建立（PLC连接后异步发生）
+  plc -> pn : Connect / Ownership / PrmWrite / PrmEnd
+  pn --> dk401 : 回调链更新组态和配置标志
+end
+
+loop 主循环 while(1)
+  dk401 -> dk401 : xpn_while_task()\nLED + Xpn_Exmode_task()\n(main_ecos.c:215-219)
+  dk401 -> hsbus : 模块配置下发 / 周期读写
+  hsbus -> ext : GBUS周期帧
+end
+
+@enduml

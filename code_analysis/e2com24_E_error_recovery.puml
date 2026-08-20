@@ -1,0 +1,43 @@
+@startuml e2com24_E_error_recovery
+title 详细图E：GBUS-EX 异常恢复（函数级）
+
+skinparam defaultFontName "Microsoft YaHei"
+
+participant "GbusEx分包库" as gbusex
+participant "HSbus_Process\n读分支" as proc
+participant "ConfigComplte\n(exmode.c:279)" as cfgcomp
+participant "DownloadConf\n(exmode.c:1474)" as dlconf
+participant "DK401后续循环" as loop401
+
+group 场景1：序号不匹配（NUMBER_MISMATCH）
+  gbusex -> gbusex : 序号连续50次不匹配\nerr_count到50\n(SubpackageAndPackage.c:324-336)
+  gbusex --> proc : SUBPACKAGE_ERR_\nNUMBER_MISMATCH
+  proc -> proc : config_count++ (:1165)
+  proc -> cfgcomp : Xpn_Exmode_ConfigComplte()\n(:1166)
+  cfgcomp -> gbusex : XCom_Master_Subpackage_Init\n重置分包状态机 (:283)
+  cfgcomp -> cfgcomp : 清gModuleData[] RecvData\ncfgendflag=1
+  loop 全部模块 ij
+    cfgcomp -> dlconf : Xpn_Exmode_DownloadConf()\n(:1168-1171)
+    dlconf -> dlconf : configFlag=0\n触发重新下发配置
+  end
+  proc -> proc : g_subpackage_stuck_flag=1\n(:1175) goto RETURN
+  note right of cfgcomp : stuck_flag=1后:\nModConf_ToModule跳过\n字节序重转换\n(:1650-1654/:1670/:1693)\n下个发送周期在:833清0
+  loop401 -> loop401 : 后续循环重新执行\n全模块配置下发
+end
+
+group 场景2：发送忙（SEND_BUSY）
+  gbusex --> proc : SUBPACKAGE_ERR_\nMASTER_SEND_BUSY\n(非空闲收到UpdateFlag=1,\nSubpackageAndPackage.c:669-672)
+  proc -> proc : 仅Xpn_ErrCode记录\n不中断周期 (:838-843)
+end
+
+group 场景3：分包卡死（STUCK）
+  gbusex -> gbusex : 序号2000周期不变\n(阈值GBUS_EX_COMMU_\nSUSPEND_JUDGMENT_MAX=2000,\nSubpackageAndPackage.c:109)
+  gbusex --> proc : SUBPACKAGE_ERR_\nMASTER_SEND_STUCK\n(:748-756)
+  note right of proc #pink : 坑点: 应用侧对应恢复块\n(exmode.c:851-865)\n被#if 0关闭, 当前仅记录\n错误码, 不主动恢复
+end
+
+group 场景4：模块配置失败
+  note over dlconf, loop401 : HSBusModuleConfigure失败:\nreboot_count<3 → 写flash+OsReboot\n(exmode.c:1815/1880-1938)\n计数==3 → 报XPN_ERR_MODULE_RETRY_REBOOT\nE2COM24槽置ModuleErr=3
+end
+
+@enduml

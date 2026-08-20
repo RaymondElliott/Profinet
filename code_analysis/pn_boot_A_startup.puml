@@ -1,0 +1,43 @@
+@startuml pn_boot_A_startup
+title 详细图A：系统启动层（函数级）
+
+skinparam defaultFontName "Microsoft YaHei"
+
+participant "eCos" as ecos
+participant "DK401" as dk401
+participant "xinjie_pn_init" as init
+participant "服务任务\nxpn_service_Task" as svc
+
+ecos -> dk401 : cyg_user_start\ncyg_thread_create("DK401", prio=7)\n(main_ecos.c:58-63)
+dk401 -> dk401 : sample_thread_entry\n→ main_ecos()\n(main_ecos.c:52-55)
+dk401 -> dk401 : PNIO_init()\n(main_ecos.c:80,\npnpb_api.c:119-153)
+note right of dk401 : OsInit / TRACE_INIT /\nPnpbNvInit / RxTx内存
+dk401 -> dk401 : CipherOK() 解密校验\n(main_ecos.c:85)
+dk401 -> dk401 : MakeContent()\n(main_ecos.c:112)
+dk401 -> dk401 : Downsys flash 备份比对\n(main_ecos.c:122-176)
+
+dk401 -> init : xpn_init_first()\n(main_ecos.c:181,\nxinjie_pn_init.c:141-248)
+init -> init : xpn_config_init()\n(xinjie_pn_init.c:159)
+init -> init : 读DownSysInfo/IP/MAC\n(xinjie_pn_init.c:168-200)
+init -> init : xpn_driver_init()\n(xinjie_pn_init.c:223)
+note right of init : gpio_fpga_init (:110)\nxpn_spi_init(0) (:113)\nxpn_timer_init (:116)\nxpn_flash_init (:119)
+init -> init : Xpn_Exmode_Init()\n(xinjie_pn_init.c:237)\n【见详细图B】
+init -> init : Xpn_LedSF_Init()\n(xinjie_pn_init.c:243)
+init --> dk401 : 返回
+
+dk401 -> dk401 : MainAppl()\n(main_ecos.c:183)\n【见详细图C】
+note right of dk401 : 同步调用，非独立线程。\n旧线程创建代码在\nmain_ecos.c:188-206\n已被 #if 0 关闭
+dk401 -> dk401 : OsWait_ms(1000)\n(main_ecos.c:208)
+
+dk401 -> init : xpn_init_second()\n(main_ecos.c:210,\nxinjie_pn_init.c:250-267)
+init -> init : Xpn_Object_IM_Init()\n(xinjie_pn_init.c:255)
+init -> svc : XPN_ServiceInit()\n(xinjie_pn_init.c:258,\nxinjie_pn_service.c:1636-1662)
+note right of svc : 初始化信号量:\ng_spi_update(0)\ng_fromto_mutex(1)\ng_fromto_callback_mutex(0)\n(service.c:1641-1643)\n创建 xpn_service_Task\nprio=5 (:1646)
+init --> dk401 : 返回
+
+loop while(1) (main_ecos.c:215-219)
+  dk401 -> dk401 : xpn_while_task()\n(xinjie_pn_init.c:271-293)
+  note right of dk401 : LED 每5圈一次\nXpn_Exmode_Task 每圈一次\n(xinjie_pn_init.c:290)
+end
+
+@enduml

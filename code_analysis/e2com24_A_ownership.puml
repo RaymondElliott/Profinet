@@ -1,0 +1,51 @@
+@startuml e2com24_A_ownership
+title 详细图A：Ownership 动态子槽组态（函数级）
+
+skinparam defaultFontName "Microsoft YaHei"
+
+participant "PLC控制器" as plc
+participant "PNDV" as pndv
+participant "Pnio_PnpbPost" as post
+participant "pnpb_sub_exp" as subexp
+participant "ownership_ind\n(iodapi_event.c:569)" as own
+participant "PNPB插拔API" as plugapi
+participant "new_plug_ind\n(iodapi_event.c:1744)" as newplug
+participant "子槽信息表\nExpect_Subslot_Info" as table
+
+plc -> pndv : Connect含期望组态
+pndv -> post : OWN_IND事件\n(pnpb_peri.c:447-448,\n分支:795-826/847)
+post -> subexp : pnpb_sub_exp_add\n(pnpb_sub_exp.c:177)
+subexp -> subexp : OsEnterX(OS_MUTEX_PNPB)\nOsEnterX(OS_MUTEX_PNPB_IO)\n(:208-209)
+note right of subexp #pink : 坑点: ownership回调\n全程在持双锁状态下执行
+
+subexp -> own : PNIO_cbf_ar_ownership_ind\n(最后一个元素时,\npnpb_sub_exp.c:348-361)
+
+group 第1步：清除旧动态子槽
+  loop 全部SLOTS×子槽k (:586-606)
+    alt flag==1或2 (旧E2COM24/EP24子槽)
+      own -> own : flag=0 (:594)
+      own -> plugapi : PNIO_sub_pull(slot,subslot)\n(:600-602)
+      plugapi -> plugapi : 持OS_MUTEX_PNPB_PLUG\n+OS_MUTEX_PNPB\n(pnpb_api.c:538-539)
+      plugapi -> newplug : PNIO_cbf_new_pull_ind
+      newplug -> newplug : InDatLen/OutDatLen\n[slot][subslot]=0\n(iodapi_event.c:1770-1777)
+    end
+  end
+end
+
+group 第2步：记录并插入新子槽
+  loop 每个期望子模块 i (:607起)
+    alt ModIdent是E2COM24或EP24\n且物理槽flag非0 (:622-623)
+      own -> own : 记录子槽信息\nflag/slot/subslot/subslotid\noutlen=Out.data_length\ninlen=In.data_length\n(:626-631)
+      note right of own #lightgreen : 关键变量:\noutlen=PLC→设备(Output)\ninlen=设备→PLC(Input)\n注意结构体注释方向写反
+      own -> plugapi : PNIO_sub_plug(slot, subslot,\nModIdent, SubIdent,\nIn.data_length, Out.data_length)\n(:637-646)
+      plugapi -> plugapi : pnpb_sub_real_plug\n(pnpb_sub_real.c:291)
+      plugapi -> newplug : PNIO_cbf_new_plug_ind\n(pnpb_sub_real.c:260)
+      newplug -> newplug : InDatLen[slot][idx]=InputLen\nOutDatLen[slot][idx]=OutputLen\n(iodapi_event.c:1752-1754)
+    end
+  end
+end
+
+own --> post : 返回
+subexp -> subexp : OsExitX双锁\n(pnpb_sub_exp.c:378-379)
+
+@enduml

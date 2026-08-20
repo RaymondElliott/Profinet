@@ -1,0 +1,50 @@
+@startuml e2com24_0_overview
+title E2COM24 串口模块整体流程（模块级概览）
+
+skinparam defaultFontName "Microsoft YaHei"
+
+participant "PLC控制器" as plc
+participant "PN协议栈\n(PNPB)" as pnpb
+participant "iodapi_event\n(动态子槽)" as iod
+participant "DK401\n(Exmode)" as dk401
+participant "GbusEx分包库\n(SubpackageAndPackage)" as gbusex
+participant "HSBUS库" as hsbus
+participant "E2COM24模块" as com
+
+group 组态阶段
+  plc -> pnpb : Ownership期望组态\n(含串口命令子槽)
+  pnpb -> iod : ownership_ind回调
+  iod -> iod : pull旧子槽→记录子槽表\n→plug新子槽
+  plc -> pnpb : PrmWrite Index5\n(串口参数+命令配置)
+  pnpb -> dk401 : DownloadConf标记
+end
+
+group 配置下发阶段
+  dk401 -> dk401 : 构建串口配置帧\n重算动态inlen\n累加totalIn/OutLength
+  dk401 -> hsbus : HSBusModuleConfigure
+  hsbus -> com : 配置帧
+  iod -> gbusex : PrmEnd→分包库初始化
+end
+
+group 周期通信（写）
+  dk401 -> dk401 : 子槽OutData拼包\n(serial_send_merge_data)
+  dk401 -> gbusex : XCom_Master_SendFrame\n分包成100字节GBUS帧
+  gbusex --> dk401 : GbusEx_Send_GbusData
+  dk401 -> hsbus : ModuleParseWrite+HSBusWrite
+  hsbus -> com : GBUS周期帧
+end
+
+group 周期通信（读）
+  com --> hsbus : GBUS周期帧
+  dk401 -> hsbus : HSBusRead+ModuleParseRead
+  dk401 -> gbusex : XCom_Master_RecvFrame\n多周期组包
+  gbusex --> dk401 : UpdateFlag=1时\n完整业务数据
+  dk401 -> dk401 : 拆包到InData各子槽
+end
+
+group 异常恢复
+  gbusex --> dk401 : 序号50次不匹配
+  dk401 -> dk401 : 分包库重置+全模块重配置
+end
+
+@enduml

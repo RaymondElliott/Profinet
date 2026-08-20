@@ -1,0 +1,8 @@
+# Office temp files
+~$*
+*.tmp
+# IDE
+.zcode/
+# OS
+Thumbs.db
+Desktop.ini

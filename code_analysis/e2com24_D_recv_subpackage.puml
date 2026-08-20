@@ -1,0 +1,54 @@
+@startuml e2com24_D_recv_subpackage
+title 详细图D：读周期 E2COM24 组包接收（函数级）
+
+skinparam defaultFontName "Microsoft YaHei"
+
+participant "E2COM24模块" as com
+participant "HSBUS库" as hsbus
+participant "HSbus_Process\n读分支(:953)" as proc
+participant "GbusEx分包库" as gbusex
+participant "serial_recv_\nmerge_data[8][1440]" as merge
+participant "InData\n(各子槽)" as indata
+
+com --> hsbus : GBUS周期帧
+proc -> hsbus : HSBusRead(gModuleData,\nCount, &gHSBusInfo) (:958)
+hsbus --> proc : RecvData + RecvLen
+proc -> proc : ModuleParseRead(i,\ngModuleData[i], mpinfo) (:1111)
+note right of proc : 提取ModuleErr(2B)\nChannelErr(4B)到\nProcessData缓冲
+proc -> proc : E2COM24槽分支 (:1129)
+proc -> proc : 填MasterRecvPara:\nGbusData=RecvData\nGbusDataLen=RecvLen\nComData=merge[GbusEx_MID]\nComDataLen=totalInLength\nUpdateFlag=0 (:1132-1137)
+
+proc -> gbusex : XCom_Master_RecvFrame(\n&MasterRecvPara) (:1152)
+note right of gbusex : 状态机三态:\nIDLE=0/SEND=1/RECV=2\n(SubpackageAndPackage.c:105-107)\n阶段迁移(380-566):\n1.发送回显+尾包判定\n2.发送→接收\n3.接收持续组包\n4.接收→空闲=完整一帧\n5.发送→空闲
+
+alt 组包未完成
+  gbusex --> proc : UpdateFlag=0
+else 完整一帧组包完成
+  gbusex -> merge : ComData完整业务数据\nUpdateFlag=1 (:487-515)
+  gbusex --> proc : UpdateFlag=1
+else 序号重复
+  gbusex --> proc : RECV_REPEAT\n仅记录 (:1153-1158)
+else 序号50次不匹配
+  gbusex --> proc : NUMBER_MISMATCH\n【见详细图E】
+end
+
+proc -> proc : Xpn_ErrCode(XPN_ERR_HSBUS_EX\n+ SlaveErr) 从站错误上报\n(:1180, 基址44420\nxinjie_pn_err.h:68)
+
+alt UpdateFlag == 1 (:1182)
+  loop 每个子槽 index (:1182-1213)
+    alt index==0 (诊断子槽)
+      proc -> indata : InData[i+1][1][0..1]←ModuleErr\nInData[i+1][1][2..5]←ChannelErr\n(:1190-1199)
+      note right of indata #lightgreen : 子槽0特殊处理:\n6字节错误来自\nModuleParseRead,\n不占merge数据
+    else 命令子槽
+      proc -> merge : 读merge[GbusEx_MID]+offset
+      proc -> indata : memcpy(InData[i+1][index+1],\nmerge+offset, inlen) (:1203)
+      proc -> indata : 端字转换 (:1206)
+      proc -> proc : offset+=inlen\n1440上限 (:1207-1211)
+    end
+  end
+end
+
+proc -> proc : GbusEx_MID++ (:1229)
+note right of indata : 之后PN侧cbf_data_write\n直接OsMemCpy\nInData[slot][subslot]\n给PLC (iodapi_event.c:350)
+
+@enduml
