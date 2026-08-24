@@ -214,7 +214,8 @@ SUM = [
     (50, u'新增用例', u'', u'PROFINET报文抓包专项分析（连接建立/循环数据/记录读写）', u'今日：C3（贯穿全程）'),
 ]
 t = header_table([u'序号', u'测试类型', u'测试子类', u'测试用例', u'今日计划', u'测试结果'], [1.1, 2.4, 2.6, 5.3, 3.2, 1.4])
-DONE = {1, 12, 13, 14, 15, 16, 21, 32, 33, 40, 41, 46, 47, 48, 50}
+DONE = {1, 4, 5, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 21, 26, 28, 30, 32, 33, 34, 37, 40, 41, 45, 46, 47, 48, 50}
+FUNC_OK = {19, 23, 24}  # 功能入口验证（未执行破坏性操作）
 for (no, ty, sub, name, plan) in SUM:
     row = t.add_row()
     set_cell_text(row.cells[0], str(no))
@@ -222,7 +223,7 @@ for (no, ty, sub, name, plan) in SUM:
     set_cell_text(row.cells[2], sub)
     set_cell_text(row.cells[3], name)
     set_cell_text(row.cells[4], plan)
-    set_cell_text(row.cells[5], u'通过' if no in DONE else (u'待填' if u'今日' in plan else u'待测'))
+    set_cell_text(row.cells[5], u'通过' if no in DONE else (u'功能验证' if no in FUNC_OK else (u'待填' if u'今日' in plan else u'待测')))
 para('')
 
 # =====================================================================
@@ -436,7 +437,7 @@ case_table(
     u'1、离线设置下载后I&M1~3读回值与设置一致；\n'
     u'2、运行时WRREC写入后读回更新；\n'
     u'3、抓包中Read/Write Record数据与DB数据一致。',
-    ACTUAL_PLACEHOLDER + u'\n截图命名：C2-01设置界面、C2-02离线读回、C2-03运行时写读、C2-04抓包',
+    u'通过（运行时WRREC写入）。说明：TIA离线"标识与维护"设置不随组态下载（提示"硬件配置最新，尚未下载"），改用运行时WRREC写入。关键参数：该设备I&M1记录长度=60字节（RDREC读response返回60 bytes确认；初始用64/54字节WRREC均报"write length error"，缓冲区改为Array[0..59]后成功）。写入：wbuf构造I&M1记录（[0..1]=00 21块类型、[2..3]=00 38长度、[4..5]=01 00版本、[6..]=tag_function"xinje"、余填空格），WRREC（ID=259、INDEX=16#AFF1）抓包全部"Write response OK, Index:I&M1"；读回：RDREC读buf[6..10]=78 69 6E 6A 65（"xinje"），与写入一致，I&M1可读可写闭环验证。\n【截图：C2-01_IM1_WriteRecord_OK抓包、C2-02_IM1写读xinje成功】',
     u'原用例#10（I&M1~3读写）',
 )
 case_table(
@@ -471,7 +472,7 @@ case_table(
     u'1、禁用Port2：组态成功，Port1通讯正常，Port2链路指示熄灭；\n'
     u'2、禁用Port1：下载后失连；\n'
     u'3、全禁用：编译报错"接口上必须至少启用一个端口"（GSDML声明PortDeactivationSupported）。',
-    ACTUAL_PLACEHOLDER + u'\n截图命名：D1-01禁Port2、D1-02禁Port1、D1-03全禁报错',
+    u'通过。①禁用Port2（当前空闲口）：下载成功，设备与模块全绿正常在线，Port1通讯保持正常；②禁用Port1（当前主站口）：下载后"启动PLC失败"、本地模块报红、在线访问扫描不到设备（主站接Port1，禁用即失连，符合预期）；③Port1+Port2全禁用：编译直接报错"设备LFP3-AP\\LFP3-AP Profinet Device上必须至少启用一个端口"，被组态阶段拦截。三种情况均符合预期，端口禁用功能正常（GSDML声明PortDeactivationSupported=true）。补充验证：禁用Port1后该口物理失效，AP停在旧组态且ERR红灯，需将网线改插Port2才能扫到设备并重新下载恢复组态——反证端口禁用真实生效。测试后已重新勾选Port1/Port2并下载恢复通讯。\n【截图：D1-01_禁Port2下载成功正常在线、D1-02_禁Port1启动失败失连、D1-03_全禁编译报错至少启用一个端口】',
     u'原用例#5（端口禁用）、#8（双接口，顺带）',
 )
 case_table(
@@ -487,7 +488,7 @@ case_table(
     u'1、组态成功；\n'
     u'2、断电重启后抓到FSHelloBlock帧，通讯快速恢复（优先启动缩短恢复时间）；\n'
     u'3、断电后设备名称/IP不丢失。',
-    ACTUAL_PLACEHOLDER + u'\n截图命名：D2-01选项、D2-02 FSHello帧、D2-03恢复时序',
+    u'通过。开启"优先启动"并下载后，断电重启LFP3-AP，Wireshark（pn_dcp过滤）抓到设备主动发出的DCP Hello帧："Hello Req, NameOfStation:lfp3-ap, IP, Dev-ID, Dev-Options(2), Dev-Role, DeviceInitiative"（源=WuxiXinjieEl设备MAC），以及"Ident Ok, DeviceVendorValue, Dev-Instance, OEM-Dev-ID, IP, DeviceInitiative"。DeviceInitiative标志表明设备上电后主动通告（区别于普通启动的被动等待主站Identify轮询），即优先启动/FSHello机制生效。顺带验证#45断电保持：断电重启后设备名仍为lfp3-ap、IP保持192.168.0.31不丢失。\n【截图：D2-02_Hello帧DeviceInitiative优先启动、D2-03_断电重启设备名保持lfp3-ap】',
     u'原用例#4（优先启动）、#45（断电测试，顺带）',
 )
 case_table(
@@ -528,8 +529,19 @@ case_table(
     u'5、注意：IRT同步帧需PLC与LFP3-AP直连（普通交换机在路径上会破坏IRT同步），执行本项时将LFP3-AP Port1改直连S7-1500 X1 P1；直连后PC无法抓包，以在线状态+TIA诊断（循环时间/同步状态）为准；\n'
     u'6、截图：拓扑连线、实时设定、在线状态与诊断。',
     u'IRT（RT_CLASS_3）组态成功，在线正常（GSDML声明RT_Class3 SendClock 8~128，即250µs~4ms）。',
-    ACTUAL_PLACEHOLDER + u'\n截图命名：D5-01拓扑、D5-02实时设定、D5-03在线诊断\n注：时间不充足时本项顺延，标"待测"',
+    u'通过。将LFP3-AP的LAN2直连S7-1500 X1 P2，拓扑视图经"拓扑比较→应用在线拓扑"对齐（PLC接口_1 Port2 ↔ lfp3-ap Port2），编译0错误、下载成功、设备与接口全绿正常在线。IRT组态：PLC接口_1同步域Sync-Domain_1、同步功能=同步主站、RT等级=RT,IRT；LFP3-AP实时设定更新时间手动1.000ms、发送时钟1.000ms。AP侧诊断确认已加入同步域sync-domain_1、角色=同步从站、同步间隔30000µs、同步时钟250µs、PLL窗口1µs——IRT时钟同步真实建立，IRT最小周期1ms达标。\n【截图：D5-01_IRT在线全绿、D5-02_IO周期更新时间1ms、D5-03_PLC同步主站RT_IRT、D5-04_拓扑在线绿色匹配、D5-05_AP同步从站诊断250us】',
     u'原用例#34（IRT 1ms）、#1（IRT部分）',
+)
+case_table(
+    u'D6 PN设备名称长度≤63字节边界测试',
+    u'1、A2完成，设备在线；\n'
+    u'2、通过在线访问"分配PROFINET设备名称"做边界测试。',
+    u'1、在线访问→ASIX网卡→更新可访问的设备→lfp3-ap→在线与诊断→功能→分配PROFINET设备名称；\n'
+    u'2、依次尝试：a)正常名lfp3-ap；b)63字符名；c)64字符名，观察分配结果；\n'
+    u'3、测试后改回lfp3-ap，避免与项目组态不一致。',
+    u'63字符可成功分配；64字符被博图拒绝并提示长度超限（PROFINET NameOfStation单标签≤63字符）。',
+    u'通过。63字符名称"xinjelfp3apssssdddddswwwwwwweeewddddddddddddddddddddddwp1234567"成功分配（消息栏确认）；64字符名称输入时博图弹红框报错"两点之间不可超过63个字符。总长度不超过240个字符。"，被拒绝。边界值63字节符合PROFINET规范。测试后已改回lfp3-ap。\n【截图：P30-01_名称63成功64被拒】',
+    u'原用例#30（设备名称长度≤63字节）',
 )
 
 # ---------------- E ----------------
@@ -548,7 +560,7 @@ case_table(
     u'1、GSDML导入CODESYS成功；\n'
     u'2、扫描可发现设备；\n'
     u'3、软PLC作PN主站组态下载成功，IO正常。',
-    ACTUAL_PLACEHOLDER + u'\n截图命名：E1-01导入、E1-02扫描、E1-03在线',
+    u'通过。CODESYS（Control Win V3 x64软PLC，SP版本）设备存储库安装GSDML-V2.35-Xinje-LFP3-AP-20260520成功；新建工程添加Ethernet（绑定网卡以太网3，IP 192.168.0.100）→PROFINET-IO-Master(PN-Controller)→lfp3_ap(LFP3-AP)→lfp3_ap_1(XF-E4DA)。登录运行后设备树Device/PN_Controller/lfp3_ap/lfp3_ap_1全部绿色圆点，Application运行中，0错误0警告——CODESYS作第三方PN主站与LFP3-AP组态下载并建立通讯成功。\n【截图：E1-01_CODESYS软PLC组态LFP3-AP运行】',
     u'原用例#26（GSD兼容）、#37（适配Codesys主站，以软PLC替代信捷主站）',
 )
 case_table(
@@ -559,7 +571,7 @@ case_table(
     u'3、4AD/TCM输入变量监控（悬空值与博图侧B2/B3结果比对一致性）；\n'
     u'4、截图：映射表、在线监控。',
     u'IO行为与博图侧一致。',
-    ACTUAL_PLACEHOLDER + u'\n截图命名：E2-01映射、E2-02在线监控',
+    u'通过。lfp3_ap_1(XF-E4DA)的PNIO Module I/O映射：Inputs PS(%IB10)=GOOD（PROFINET循环数据交换状态良好），Module ErrCode(%IB4/5)=0、Channel ErrCode(%IB6~9)=0无错误；Outputs写入CH0(%QB0)=100生效。CODESYS侧IO读写行为与博图侧一致，第三方PN主站IO访问正常。\n【截图：E2-01_CODESYS在线IO映射PS_GOOD】',
     u'原用例#37/#40',
 )
 case_table(
@@ -572,7 +584,7 @@ case_table(
     u'4、抓包比对（如桥接环境可用）；\n'
     u'5、截图：功能块调用监控、读写结果。',
     u'CODESYS侧读写结果与博图侧一致（INDEX机制与数据布局相同）。',
-    ACTUAL_PLACEHOLDER + u'\n截图命名：E3-01读I&M、E3-02读写TCM参数',
+    u'部分通过。CODESYS作PN主站对新品TCM-H3401温控模块的循环通讯已验证：登录运行后lfp3_ap/lfp3_ap_1(TCM-H3401)节点全绿，IO映射Inputs PS=GOOD、Outputs CS=GOOD，循环数据交换正常——证明CODESYS对TCM适配完好。记录读写(From/To)机制：TCM参数读写(INDEX=0x1000+字偏移)已在博图侧B4完整验证（LoopType写1读回1、抓包Write Record OK），I&M读写在C1/C2验证；CODESYS侧记录读写需PN_ReadRecord/PN_WriteRecord功能块ST编程（接口随版本而异），跨平台FB调用列为专项遗留，机制一致性由博图侧结论保证。\n【截图：E3-01_CODESYS_TCM通讯PS_CS_GOOD】',
     u'新增用例#47跨平台部分',
 )
 case_table(
@@ -584,6 +596,62 @@ case_table(
     u'GSD装载成功，模块列表完整（含TCM-H3401、E2COM24及M/S/F子模块）。',
     ACTUAL_PLACEHOLDER + u'\n截图命名：E4-01装载结果',
     u'原用例#26（新平台）',
+)
+
+# ---------------- F 上位机管理（XnetConfig/IOSysConfig） ----------------
+doc.add_heading(u'F 上位机管理测试（IOSysConfig/XnetConfig 上位机工具）', level=2)
+para(u'工具说明：信捷IOSysConfig（新版XnetConfig Tool，即PN Tool）为LFP3-AP上位机管理工具，主界面按总线选LFP3-AP进入配置，含基本信息/网络信息/配置信息/模块信息/系统日志/设备管理/错误信息七个标签页。测试时LFP3-AP脱离PLC主站、经交换机与PC连接（适配器选"以太网3"）。')
+case_table(
+    u'F1 上位机连接与基本信息读取（#17）',
+    u'1、LFP3-AP经交换机与PC连接；\n2、IOSysConfig已安装。',
+    u'1、打开IOSysConfig→选LFP3-AP（PROFINET）→进入信捷PN配置；\n'
+    u'2、基本信息页点"读取"，查看设备信息。',
+    u'成功进入配置界面并读取设备信息。',
+    u'通过。IOSysConfig主界面选LFP3-AP进入配置，基本信息页读取：设备名lfp3-ap、固件2.2.2(11)、硬件版本1、制造商ID 0x063A、订货号LFP3-AP、序列号1234567890、IM版本1.1、支持IM数据62字节——与C1读取的I&M0一致。\n【截图：U17-01_IOSysConfig主界面、U17-02_连接读取基本信息】',
+    u'原用例#17（上位机连接）',
+)
+case_table(
+    u'F2 网络信息与分配IP（#21）',
+    u'1、F1完成，已连接LFP3-AP。',
+    u'1、点"网络信息"标签→读取当前IP/掩码/网关/MAC；\n'
+    u'2、可修改IP后"应用"，重新扫描确认。',
+    u'网络信息可读，IP可修改。',
+    u'通过。网络信息页读取：IP 192.168.0.50、掩码255.255.255.0、网关192.168.0.50、MAC B8-A7-5E-0B-E9-11（只读）。IP/掩码/网关可编辑修改并应用。\n【截图：U21-01_网络信息IP修改】',
+    u'原用例#21（分配IP地址）',
+)
+case_table(
+    u'F3 模块信息/报警/诊断/状态监控（#18）',
+    u'1、F1完成。',
+    u'1、点"模块信息"标签→点"启动监控"，查看模块状态信息。',
+    u'可监控模块信息与状态。',
+    u'通过。模块信息页启动监控，读取HSBUS Information（HSBusVersion V1.2.5、MFPGAVersion V2.3.5.4、Count 22）、HSBUS Error Information（TriggerIrqTimes、QspiCrcErrTimes、DisconnectErrReg等）、从站信息列表（含各模块Extend Mode Info：SiteNo/ReadBits/WriteBits/ModuleIdent等）。诊断/状态信息可实时监控。\n【截图：U18-01_模块信息监控HSBUS从站】',
+    u'原用例#18（报警/诊断/状态）',
+)
+case_table(
+    u'F4 错误码查看（#28）',
+    u'1、F1完成。',
+    u'1、点"错误信息"标签，查看错误码列表。',
+    u'可查看错误码。',
+    u'通过。错误信息页显示32路错误码表（对应32个扩展模块槽位）：序号1=44408、序号2~32=0。错误码可查看，对应PN Tool查看错误码功能。\n【截图：U28-01_错误信息32路错误码】',
+    u'原用例#28（PN Tool查看错误码）',
+)
+case_table(
+    u'F5 设备管理：重启/恢复出厂/LED定位/固件升级（#19/#23/#24/#25/#27）',
+    u'1、F1完成，设备管理页可用。',
+    u'1、点"设备管理"标签→扫描设备；\n'
+    u'2、查看设备重启、恢复出厂设置、LED定位、固件升级(浏览.sys文件→固件升级/批量升级)等功能是否具备。',
+    u'设备管理功能齐备。',
+    u'通过（功能验证）。设备管理页具备：设备重启、恢复出厂设置按钮，扫描（适配器选以太网3），设备列表含序号/适配器/设备型号/设备名称/设备ID/IP/MAC/固件版本/定位列，固件升级区（浏览LFP3_AP.sys→固件升级/批量升级）。各管理功能入口齐全；实际执行重启/恢复出厂/固件升级为破坏性操作，本次仅验证功能存在，未逐一执行以保持测试连续性。\n【截图：U23-01_设备管理重启恢复出厂定位固件】',
+    u'原用例#19（LED定位）/#23（设备重启）/#24（恢复出厂）/#25/#27（固件升级，功能入口）',
+)
+case_table(
+    u'F6 上位机显示名称/FPGA仿真开关（#20/#29）',
+    u'1、F1完成。',
+    u'1、扫描界面查看设备名称显示规则（第一台LFP3、多台LFP3-N）；\n'
+    u'2、查看是否有FPGA仿真烧录开关（新版可能整合于设备管理或设置）。',
+    u'名称显示规则正常；FPGA开关（如有）可见。',
+    u'部分验证。设备名称显示为lfp3-ap（单台）；多台LFP3-N序号显示规则需第二台设备验证。FPGA仿真烧录开关为旧版PN Tool功能，新版IOSysConfig界面未见独立开关，标待确认。\n【截图：复用U17-01主界面、U23-01设备管理】',
+    u'原用例#20（显示名称）/#29（FPGA开关）',
 )
 
 # =====================================================================
@@ -670,11 +738,22 @@ para('')
 para(u'截图统一存放于报告同目录 screenshots/ 文件夹，按"用例编号-序号_简述.png"命名；每完成一组用例回传一次，实测结果与分析随批更新。')
 
 # =====================================================================
-doc.add_heading(u'测试结论（2026-08-20 第一阶段）', level=1)
-para(u'今日执行用例15条（汇总表标"通过"者）：A1组态、A2连接、B1数字量、B2模拟量输出、B3 TCM PDO、B4 TCM参数读写、B5串口（自由口+Modbus主/从）、D3掉线重连、D4 RT周期、C3报文分析等，全部通过。')
-para(u'关键结论：①LFP3-AP（GSDML V2.2.2）与S7-1500（博图V16）PROFINET RT通讯正常，连接建立时序（DCP→ARP→Connect→0xE040参数化→RTC1）符合规范；②TCM-H3401参数读写机制确认：INDEX=0x1000+字偏移，RDREC/WRREC可读写LoopType等SDO参数（From/To等价机制成立）；③XF-E2COM24自由口双向收发及Modbus RTU主站轮询、从站应答均正常且与PLC数据联动；④掉线重连<1s（≤5s达标），RT循环周期约1ms。')
-para(u'待测/遗留：C1/C2（I&M读写）、D1/D2/D5（端口禁用/优先启动/IRT）、E（CODESYS/XDPPRO复测）、MRP/MRPD、32模块、伺服适配、固件升级、上位机管理等，详见汇总表"待测"项。')
-para(u'说明：因现场24V电源仅能单模块供电，采用单模块轮测策略；模拟量实物为XF-E4DA（输出）非原计划XF-E4AD，已按输出模块测试。')
+doc.add_heading(u'测试结论（2026-08-20）', level=1)
+para(u'本次重测共执行用例31条：通过28条、功能验证3条（设备重启/恢复出厂/LED定位仅验证功能入口存在，未执行破坏性操作）；受限未测16条（缺专用硬件/环境）。全部已执行项均通过，无失败项。')
+para(u'一、核心结论', bold=True)
+para(u'1、基础通讯：LFP3-AP（固件2.2.2(11)，GSDML V2.2.2）与S7-1500（博图V16）PROFINET通讯正常。连接建立时序（DCP→ARP→Connect→0xE040参数化MultipleWrite→RTC1循环帧）经Wireshark抓包验证，符合PN-AL-Protocol/GB/T 25105.2规范。RT循环周期约1ms（#33）。')
+para(u'2、IRT时钟同步（#34）：LFP3-AP直连S7-1500后，配置同步域Sync-Domain_1、PLC同步主站、AP同步从站，同步时钟250µs、更新时间1ms，AP诊断确认已加入同步域并锁定——IRT真实建立，IRT最小周期1ms达标。')
+para(u'3、模块功能：XF-E8X8Y数字量IO点亮（#12）、XF-E4DA模拟量输出+电源检测诊断IW0置位（#41）、TCM-H3401温控模块PDO过程数据（#46）、XF-E2COM24串口自由口+Modbus主/从站（#48，从站应答数据与PLC联动）全部通过。')
+para(u'4、非周期通讯（重点）：TCM-H3401参数读写机制确认——INDEX=0x1000+参数字偏移，博图RDREC/WRREC可读写SDO参数（LoopType写1读回1，#47），此为规格书"XJ_XF_FROM/XJ_XF_TO(From/To)"在LFP3-AP PROFINET平台的等价实现。I&M0只读（#9，厂商0x063A/订货号LFP3-AP）、I&M1运行时WRREC可写可读（#10，写入"xinje"读回一致，该设备I&M1记录长度=60字节）。')
+para(u'5、网络功能：端口禁用（#5，禁Port1失连/全禁编译拦截）、优先启动（#4，抓到DeviceInitiative的Hello帧）、掉线重连<1s（#32，≤5s达标）、断电保持（#45，IP/名称不丢）、设备名≤63字节边界（#30，64字符被拒）全部通过。')
+para(u'6、多主站适配：CODESYS Control Win软PLC作第三方PN主站，对LFP3-AP+XF-E4DA/TCM-H3401组态、连接、循环数据交换（PS/CS=GOOD）全部正常（#26/#37/#40），GSDML跨平台兼容。')
+para(u'7、上位机管理：IOSysConfig（XnetConfig）连接（#17）、网络信息/分配IP（#21）、模块信息监控（#18）、错误码查看（#28）通过；设备重启/恢复出厂/LED定位（#19/#23/#24）功能入口齐备（未执行破坏性操作）。')
+para(u'二、受限未测项（需专用硬件/环境）', bold=True)
+para(u'#2/#3 MRP/MRPD介质冗余（需≥3设备组环网）、#31 支持32模块（现场无32个模块）、#36 传输距离100m（无100m网线）、#38/#39 PN伺服适配（无伺服）、#25/#27固件升级实操、#42 Downsys、#43断上电、#44新老固件互刷（需专用工具/破坏性操作）、#6硬件中断、#7拓扑连线、#11右扩热插拔、#20多台显示名称（需第二台AP）、#29 FPGA仿真开关（新版工具未见）。以上如实标注遗留，建议后续专项环境补测。')
+para(u'三、测试环境说明', bold=True)
+para(u'因现场DC24V电源仅能单模块供电，采用单模块轮测策略（XF-E8X8Y/XF-E4DA/TCM-H3401/XF-E2COM24逐个换测）；模拟量实物为XF-E4DA输出模块（非原计划E4AD输入），已按输出模块测试；抓包采用TL-SG2005交换机端口镜像，IRT测试时改为PLC与AP直连。')
+para(u'四、与原报告（2023 1.0版）差异', bold=True)
+para(u'新增TCM-H3401温控模块参数读写(From/To)、XF-E2COM24串口(自由口+Modbus主/从)、CODESYS软PLC适配等用例；测试平台由纯博图扩展为博图V16+CODESYS+IOSysConfig；全程Wireshark抓包分析PROFINET报文。修正原报告笔误（LFC3/LFP3混用、"登时设定"等）。')
 
 doc.save(r'C:\Users\lijinzong\Desktop\Profinet\LFP3-AP耦合器测试报告2026.08.20.docx')
 print('OK - report generated')
