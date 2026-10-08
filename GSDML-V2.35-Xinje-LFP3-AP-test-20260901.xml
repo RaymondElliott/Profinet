@@ -1787,7 +1787,7 @@
 				<ParameterRecordDataItem Index="0" Length="9"> <!--io数据只写字节序：主到从（Output）-->
 				<Name TextId="T_Module_Config_PrmaH3401" />         
 				<Const Data="0x00,0x00,0x00,0x00" />
-					<Ref DataType="Unsigned8" ByteOffset="0" DefaultValue="1" Visible="false" TextId="Arr0" />
+					<Ref DataType="Unsigned8" ByteOffset="0" DefaultValue="0" Visible="false" TextId="Arr0" />
 					<Ref DataType="Unsigned8" ByteOffset="1" DefaultValue="4" Visible="false" TextId="Arr1" />
 					<Ref DataType="Unsigned8" ByteOffset="2" DefaultValue="4" Visible="false" TextId="Arr2" />				
 					<Ref DataType="Unsigned8" ByteOffset="3" DefaultValue="4" Visible="false" TextId="Arr3" />
@@ -1800,7 +1800,7 @@
 				<ParameterRecordDataItem Index="1" Length="17"> <!--io数据只读字节序：从到主（Input）-->
 				<Name TextId="T_Module_Config_Prmb" />         
 				<Const Data="0x00,0x00,0x00,0x00" />
-					<Ref DataType="Unsigned8" ByteOffset="0" DefaultValue="1" Visible="false" TextId="Arr0" />						
+					<Ref DataType="Unsigned8" ByteOffset="0" DefaultValue="0" Visible="false" TextId="Arr0" />						
 					<Ref DataType="Unsigned8" ByteOffset="1" DefaultValue="4" Visible="false" TextId="Arr1" />							
 					<Ref DataType="Unsigned8" ByteOffset="2" DefaultValue="4" Visible="false" TextId="Arr2" />
 					<Ref DataType="Unsigned8" ByteOffset="3" DefaultValue="4" Visible="false" TextId="Arr3" />					

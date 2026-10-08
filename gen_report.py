@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-"""生成《LFP3-AP耦合器测试报告2026.08.20.docx》骨架版：
-测试大纲 + 45条原框架汇总表(+5条新增) + 今日执行用例详情(实测留占位) + 附录速查。
+"""生成《LFP3-AP耦合器测试报告2026.08.20.docx》：
+测试大纲 + 50条汇总表 + 全用例详情(实测+截图嵌入) + 附录速查。
 """
+import os
 import docx
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
@@ -12,6 +13,7 @@ from docx.oxml import OxmlElement
 
 SONG = u'宋体'
 HEI = u'黑体'
+IMG_DIR = r'C:\Users\lijinzong\Desktop\Profinet\screenshots'
 
 doc = Document()
 
@@ -77,7 +79,39 @@ def header_table(headers, widths):
         set_cell_text(t.rows[0].cells[i], h, bold=True)
     return t
 
-# 六段式用例表
+# 六段式用例表（实测结果单元格内嵌截图）
+IMGS = {
+    u'A2 设备名称/IP分配与组态下载（PROFINET连接建立全过程抓包）': [u'A2-01_下载成功PLC运行.png'],
+    u'B1 XF-E8X8Y数字量IO测试': [(u'B1-01_输出监控表Q01Q02TRUE.png', 12.6), (u'B1-01_输出实物灯Y1Y2亮.png', 7.5), (u'B1-04_0xE040参数化Write帧.png', 12.6)],
+    u'B2 XF-E4DA模拟量输出与诊断测试（实物为E4DA输出模块，非原计划E4AD输入）': [
+        u'B2-00_E4DA地址I0-5Q0-15.png', u'B2-01_E4DA输出写入QD0=8000.png',
+        u'B2-02_STOP保持参数0xE040Write.png', u'B2-03_电源检测拔电IW0=1.png'],
+    u'B3 TCM-H3401 PDO过程数据测试': [u'B3-01_TCM_PDO基线.png'],
+    u'B4 TCM-H3401参数读写指令专项测试（From/To机制）【今日重点】': [u'B4-01_读LoopType=0_VALID=1.png', u'B4-02_LoopType写1读回=1.png'],
+    u'B5 XF-E2COM24串口通讯测试': [
+        u'B5-00_E2COM24组态地址.png', u'B5-00_E2COM24串口参数自由口.png', u'B5-01_串口双向收发成功.png',
+        u'B5-06_Modbus主站轮询010300000004.png', u'B5-07_Modbus从站应答3132.png'],
+    u'C1 I&M0只读信息测试': [u'C1-01_IM0读取厂商0x063A订货号LFP3-AP.png', u'C1-02_IM0_ReadRecord抓包.png'],
+    u'C2 I&M1~I&M3读写测试': [u'C2-01_IM1_WriteRecord_OK抓包.png', u'C2-02_IM1写读xinje成功.png'],
+    u'C3 PROFINET报文抓包专项分析': [u'D3-01_重连序列DCP_Connect_MultipleWrite.png', u'D4-01_RTC1循环帧约1ms.png'],
+    u'D1 端口禁用功能测试': [u'D1-01_禁Port2下载成功正常在线.png', u'D1-02_禁Port1启动失败失连.png', u'D1-03_全禁编译报错至少启用一个端口.png'],
+    u'D2 优先启动功能测试': [u'D2-02_Hello帧DeviceInitiative优先启动.png', u'D2-03_断电重启设备名保持lfp3-ap.png'],
+    u'D3 掉线重连恢复时间≤5s': [u'D3-01_重连序列DCP_Connect_MultipleWrite.png'],
+    u'D4 RT最小通讯周期1ms': [u'D4-01_RTC1循环帧约1ms.png'],
+    u'D5 IRT最小通讯周期测试（时间允许）': [
+        u'D5-01_IRT在线全绿.png', u'D5-02_IO周期更新时间1ms.png', u'D5-03_PLC同步主站RT_IRT.png',
+        u'D5-04_拓扑在线绿色匹配.png', u'D5-05_AP同步从站诊断250us.png'],
+    u'D6 PN设备名称长度≤63字节边界测试': [u'P30-01_名称63成功64被拒.png'],
+    u'E1 CODESYS GSDML导入与软PLC主站组态': [u'E1-01_CODESYS软PLC组态LFP3-AP运行.png'],
+    u'E2 CODESYS模块IO复测': [u'E2-01_CODESYS在线IO映射PS_GOOD.png'],
+    u'E3 CODESYS记录读写复测（跨平台验证）': [u'E3-01_CODESYS_TCM通讯PS_CS_GOOD.png'],
+    u'F1 上位机连接与基本信息读取（#17）': [u'U17-01_IOSysConfig主界面.png', u'U17-02_连接读取基本信息.png'],
+    u'F2 网络信息与分配IP（#21）': [u'U21-01_网络信息IP修改.png'],
+    u'F3 模块信息/报警/诊断/状态监控（#18）': [u'U18-01_模块信息监控HSBUS从站.png'],
+    u'F4 错误码查看（#28）': [u'U28-01_错误信息32路错误码.png'],
+    u'F5 设备管理：重启/恢复出厂/LED定位/固件升级（#19/#23/#24/#25/#27）': [u'U23-01_设备管理重启恢复出厂定位固件.png'],
+}
+
 def case_table(item, cond, steps, expect, actual, req):
     t = make_table(6, 2, widths=[2.6, 13.4])
     rows = [
@@ -91,6 +125,23 @@ def case_table(item, cond, steps, expect, actual, req):
     for i, (k, v) in enumerate(rows):
         set_cell_text(t.rows[i].cells[0], k, bold=True)
         set_cell_text(t.rows[i].cells[1], v, bold=(k == u'实测结果'))
+    # 实测结果单元格内嵌截图（支持 (文件名, 宽度cm) 元组）
+    for entry in IMGS.get(item, []):
+        if isinstance(entry, tuple):
+            fn, wcm = entry
+        else:
+            fn, wcm = entry, 12.6
+        path = os.path.join(IMG_DIR, fn)
+        if os.path.exists(path):
+            p = t.rows[4].cells[1].add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run()
+            try:
+                run.add_picture(path, width=Cm(wcm))
+            except Exception as e:
+                print('image fail:', fn, e)
+        else:
+            print('image missing:', fn)
     para('')
 
 ACTUAL_PLACEHOLDER = u'【待填：云桌面执行后填写实测结果，并在此处插入截图（截图命名见附录D）】'
